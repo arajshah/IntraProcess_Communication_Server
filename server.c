@@ -1,144 +1,116 @@
-#include <unistd.h> 
-#include <stdio.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <stdlib.h>
-#include <netinet/in.h>
+#include <netinet/in.h> //structure for storing address information 
+#include <stdio.h> 
 #include <string.h>
-#include <netdb.h>
+#include <stdlib.h> 
+#include <sys/socket.h> //for socket APIs 
+#include <sys/types.h> 
+#include <unistd.h>
+#include "list.h"
 
-#define PORT 8000
-#define MAX 10
+#define PORT 9001
+#define ACK "ACK"
+  
+int main(int argc, char const* argv[]) 
+{ 
+  
+	  int n, val, idx;
+    // create server socket similar to what was done in 
+    // client program 
+    int servSockD = socket(AF_INET, SOCK_STREAM, 0); 
+  
+    // string store data to recv/send to/from client 
+    char buf[1024];
+		char sbuf[1024];
+    char* token;
 
-void receiver(int);
-void sender(int*);
+    // define server address 
+    struct sockaddr_in servAddr; 
+  
+	  // list
+		list_t *mylist;
 
-char buf[256];
-int dfd[MAX];
-//int count;
-int sfd;
 
-int main()
-{
-	//int timeout = 100;  // user timeout in milliseconds [ms]
+    servAddr.sin_family = AF_INET; 
+    servAddr.sin_port = htons(PORT); 
+    servAddr.sin_addr.s_addr = INADDR_ANY; 
+  
+    // bind socket to the specified IP and port 
+    bind(servSockD, (struct sockaddr*)&servAddr, 
+         sizeof(servAddr)); 
+  
+    // listen for connections 
+    listen(servSockD, 1);
+    printf("Server is running and waiting for client connections on port %d...\n", PORT);
+  
+    // integer to hold client socket. 
+    int clientSocket = accept(servSockD, NULL, NULL); 
 
-	int count,yes=1;
+    mylist = list_alloc();  // create the list
 
-	struct sockaddr_in s;
+    while(1){
+      // recvs messages from client socket 
+      n = recv(clientSocket, buf, sizeof(buf), 0);
+      buf[n] = '\0';
 
-	sfd=socket(PF_INET,SOCK_STREAM,0);//0 signifies TCP
+      if (n > 0) {
+          token = strtok(buf, " ");
 
-	setsockopt(sfd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof (yes));
+          if (strcmp(token, "exit") == 0) {
+              list_free(mylist);
+              printf("Server shutting down...\n");
+              break;
+          } else if (strcmp(token, "get_length") == 0) {
+              val = list_length(mylist);
+              sprintf(sbuf, "Length = %d", val);
+          } else if (strcmp(token, "add_front") == 0) {
+              token = strtok(NULL, " ");
+              val = atoi(token);
+              list_add_to_front(mylist, val);
+              sprintf(sbuf, "%s %d", ACK, val);
+          } else if (strcmp(token, "add_back") == 0) {
+              token = strtok(NULL, " ");
+              val = atoi(token);
+              list_add_to_back(mylist, val);
+              sprintf(sbuf, "%s %d", ACK, val);
+          } else if (strcmp(token, "add_position") == 0) {
+              token = strtok(NULL, " ");
+              idx = atoi(token);
+              token = strtok(NULL, " ");
+              val = atoi(token);
+              list_add_at_index(mylist, val, idx);
+              sprintf(sbuf, "%s %d at %d", ACK, val, idx);
+          } else if (strcmp(token, "remove_back") == 0) {
+              val = list_remove_from_back(mylist);
+              sprintf(sbuf, "Removed = %d", val);
+          } else if (strcmp(token, "remove_front") == 0) {
+              val = list_remove_from_front(mylist);
+              sprintf(sbuf, "Removed = %d", val);
+          } else if (strcmp(token, "remove_position") == 0) {
+              token = strtok(NULL, " ");
+              idx = atoi(token);
+              val = list_remove_at_index(mylist, idx);
+              sprintf(sbuf, "Removed = %d from %d", val, idx);
+          } else if (strcmp(token, "get") == 0) {
+              token = strtok(NULL, " ");
+              idx = atoi(token);
+              val = list_get_elem_at(mylist, idx);
+              sprintf(sbuf, "Value at %d = %d", idx, val);
+          } else if (strcmp(token, "print") == 0) {
+              char *list_str = listToString(mylist);
+              snprintf(sbuf, sizeof(sbuf), "%s", list_str);
+              free(list_str);
+          } else {
+              snprintf(sbuf, sizeof(sbuf), "Unknown command");
+          }
 
-	s.sin_family=AF_INET;
-	s.sin_port=htons(PORT);
-	s.sin_addr.s_addr=INADDR_ANY;
+          send(clientSocket, sbuf, strlen(sbuf), 0);
+      }
 
-	//s.sin_addr.s_addr = inet_addr("127.0.0.1");
+      memset(buf, '\0', sizeof(buf));
+      memset(sbuf, '\0', sizeof(sbuf));
+  }
 
-	if(bind(sfd,(struct addr*)&s,sizeof(s))==0)
-		printf("Bind successful\n");
-
-	listen(sfd,5);
-
-	count=-1;
-
-	pthread_t tid1;
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-
-	pthread_create(&tid1,&attr,&sender,&count);
-	while(1)
-	{
-		dfd[++count]=accept(sfd,NULL,NULL);
-		printf("Count : %d\n",(count+1));
-
-		pthread_t tid2;
-
-		memset(buf,NULL,sizeof(buf));
-
-		//Call the thread
-		pthread_create(&tid2,&attr,&receiver,dfd[count]);
-
-		// //Join the threads
-		// pthread_join(tid1,NULL);
-		// pthread_join(tid2,NULL);
-
-		// close(dfd[count]);
-	}
-
-	//Close the file descriptor
-
-}
-
-void receiver(int dfd)
-{
-	int len,cl;
-	while(1)
-	{
-		if(recv(dfd,&buf,sizeof(buf),0)==0)
-		{
-			close(dfd);
-			pthread_exit(NULL);
-			//exit(0);
-		}
-
-		else
-		{
-			len=strlen(buf);
-			cl=buf[0]-'0';
-			//printf("CL : %d\n",cl+sfd);
-			//memcpy(buf,buf+1,sizeof(buf));
-			//buf[len-1]='\0';
-
-			if(cl==0)
-			{
-				memcpy(buf,buf+1,sizeof(buf));
-				buf[len-1]='\0';
-				printf("Message received from client %d : %s\n",(dfd-sfd),buf);
-				//send(dfd,&buf,sizeof(buf),0);
-			}
-
-			else
-			{
-				buf[0]=dfd+'0';
-				send(cl+sfd,&buf,sizeof(buf),0);
-			}
-		}
-
-		memset(buf,NULL,sizeof(buf));
-	}
-}
-
-void sender(int* count)
-{
-	int cl;
-	while(1)
-	{
-		int i;
-		memset(buf,NULL,sizeof(buf));
-		//scanf("%s",&buf);
-		scanf(" %[^\t\n]s",&buf);
-
-		if(strcmp(buf,"q")==0)
-		{
-			//close(d);
-			exit(0);
-		}
-
-		if(strlen(buf)!=0)
-		{
-			printf("Enter client number (0 to brodcast) : ");
-			scanf("%d",&cl);
-
-			if(cl==0)
-			{
-				for(i=0;i<*count;i++)
-					send(dfd[i],&buf,sizeof(buf),0);
-			}
-
-			else
-				send(dfd[cl-1],&buf,sizeof(buf),0);
-		}
-	}
+  close(clientSocket);
+  close(servSockD);
+    return 0; 
 }
